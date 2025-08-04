@@ -12,7 +12,13 @@
 	},
 	"ai": {
 		"binding": "AI"
-	}
+	},
+	"vectorize": [
+		{
+			"binding": "VECTORIZE",
+			"index_name": "wine-recommendation-engine"
+		}
+	],
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
