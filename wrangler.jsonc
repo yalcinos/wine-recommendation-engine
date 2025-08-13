@@ -16,7 +16,7 @@
 	"vectorize": [
 		{
 			"binding": "VECTORIZE",
-			"index_name": "wine-recommendation-engine"
+			"index_name": "wine-recommendation-engine-v2"
 		}
 	],
 	/**

@@ -8,6 +8,7 @@
  * Learn more at https://developers.cloudflare.com/workers/
  */
 
+import fetchProductsMcp from './fetchProductList.js';
 import wineProducts from './mock/products.js';
 
 export default {
@@ -17,15 +18,20 @@ export default {
 
 		// Handle different endpoints
 		if (path === '/products') {
+			const response = await fetchProductsMcp();
+
 			// Return the raw product data
-			return new Response(JSON.stringify(wineProducts), {
+			return new Response(JSON.stringify(response), {
 				headers: { 'Content-Type': 'application/json' },
 			});
 		}
 
 		if (path === '/text-data') {
+			const response = await fetchProductsMcp();
 			// Convert products to text data for vectorization
-			const textData = convertProductsToTextData(wineProducts);
+			const textData = convertProductsToTextData(response.products);
+			console.log('🚀 ~ fetch ~ textData:', textData);
+
 			return new Response(JSON.stringify(textData), {
 				headers: { 'Content-Type': 'application/json' },
 			});
@@ -34,7 +40,10 @@ export default {
 		if (path === '/insert') {
 			// Generate embeddings and insert into Vectorize
 			try {
-				const textData = convertProductsToTextData(wineProducts);
+				const response = await fetchProductsMcp();
+
+				const textData = convertProductsToTextData(response.products);
+
 				const vectors = await generateEmbeddings(textData, env);
 
 				const inserted = await env.VECTORIZE.upsert(vectors);
@@ -60,7 +69,7 @@ export default {
 
 				const matches = await env.VECTORIZE.query(queryEmbedding.data[0], {
 					topK: 5,
-					// returnMetadata: true,
+					returnMetadata: true,
 				});
 
 				return new Response(JSON.stringify({ query, matches }), {
@@ -97,33 +106,68 @@ export default {
  */
 function convertProductsToTextData(products) {
 	return products.map((product) => {
+		// Get the first variant for pricing and basic info
+		const variant = product.variants?.[0] || {};
+
 		// Create a comprehensive text description from all product attributes
-		const textDescription = [
-			product.wine_name,
-			`${product.type} wine`,
-			`${product.varietal} varietal`,
-			`${product.vintage} vintage`,
-			`from ${product.country}`,
-			`${product.region} region`,
-			`${product.appellation} appellation`,
-			`$${product.price} price`,
-			`${product.tasting_profile.body} body`,
-			`${product.tasting_profile.sweetness} sweetness`,
-			`${product.tasting_profile.acidity} acidity`,
-			`${product.tasting_profile.tannin} tannin`,
-			`${product.tasting_profile.fruitness} fruitness`,
-		].join(' ');
+		let textDescription = [
+			product.title,
+			product.wine?.varietal ? `${product.wine.varietal} varietal` : '',
+			product.wine?.vintage ? `${product.wine.vintage} vintage` : '',
+			product.wine?.countryCode ? `from ${product.wine.countryCode}` : '',
+			product.wine?.region ? `${product.wine.region} region` : '',
+			product.wine?.appellation ? `${product.wine.appellation} appellation` : '',
+			variant.price ? `$${(variant.price / 100).toFixed(2)} price` : '',
+			product.wine?.type ? `${product.wine.type} wine type` : '',
+			product.adminStatus ? `${product.adminStatus} status` : '',
+		]
+			.filter(Boolean)
+			.join('. ');
+
+		// Add taste profile if available
+		if (product.wine?.tasteProfile) {
+			const tasteProfile = product.wine.tasteProfile;
+			const tasteText = [
+				tasteProfile.body !== null ? `${tasteProfile.body} body` : '',
+				tasteProfile.sweetness !== null ? `${tasteProfile.sweetness} sweetness` : '',
+				tasteProfile.acidity !== null ? `${tasteProfile.acidity} acidity` : '',
+				tasteProfile.tannin !== null ? `${tasteProfile.tannin} tannin` : '',
+				tasteProfile.fruitiness !== null ? `${tasteProfile.fruitiness} fruitiness` : '',
+			]
+				.filter(Boolean)
+				.join('. ');
+
+			if (tasteText) {
+				textDescription += `. ${tasteText}`;
+			}
+		}
 
 		return {
-			id: product.sku,
+			id: product.id,
 			text: textDescription,
 			metadata: {
-				...product,
-				// Add additional searchable text fields
+				// Core product info
+				id: product.id,
+				title: product.title,
+				type: product.type,
+				wineType: product.wine?.type || '', // Red, White, etc.
+				varietal: product.wine?.varietal || '',
+				vintage: product.wine?.vintage ? String(product.wine.vintage) : '',
+
+				// Taste profile as filterable strings
+				tasteBody: product.wine?.tasteProfile?.body ? String(product.wine.tasteProfile.body) : '',
+				tasteSweetness: product.wine?.tasteProfile?.sweetness ? String(product.wine.tasteProfile.sweetness) : '',
+				tasteAcidity: product.wine?.tasteProfile?.acidity ? String(product.wine.tasteProfile.acidity) : '',
+				tasteTannin: product.wine?.tasteProfile?.tannin ? String(product.wine.tasteProfile.tannin) : '',
+				tasteFruitiness: product.wine?.tasteProfile?.fruitiness ? String(product.wine.tasteProfile.fruitiness) : '',
+
+				// Useful for recommendations
+				priceRange: variant.price ? getPriceRange(variant.price / 100) : 'unknown',
+				price: variant.price ? String(variant.price / 100) : '',
+				region: product.wine?.region || '',
+				appellation: product.wine?.appellation || '',
 				searchableText: textDescription.toLowerCase(),
-				priceRange: getPriceRange(product.price),
-				regionCountry: `${product.region}, ${product.country}`,
-				wineTypeVarietal: `${product.type} ${product.varietal}`,
+				sku: variant.sku || '',
 			},
 		};
 	});
